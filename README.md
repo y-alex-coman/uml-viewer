@@ -191,10 +191,10 @@ namespace is a `:dependency`. `requiring-resolve` of a quoted var is a
 `:stereotype :interface`. `defrecord` or `deftype` of a protocol is
 `:implements`. External `:require`s and `:import`s become **foreign**
 classes. The overlay fills Clojure members from `.metrics/`. TypeScript,
-Rust, and Python are separate scanners (see
-[Language graphs](#language-graphs)): one class per module, with exported
-members as `:ops`. The overlay joins each snapshot by `:ns`, then by
-the class id.
+Rust, Python, and Java are separate scanners (see
+[Language graphs](#language-graphs)): one class per module or source
+file, with exported members as `:ops`. The overlay joins each snapshot
+by `:ns`, then by the class id.
 
 ### Do not invent layers (components)
 
@@ -252,9 +252,9 @@ Right (the ns tree):
  :foreign [quil]
  :order [main adapters application engine source graph
          clojure-language typescript-language rust-language python-language
-         domain]
+         java-language domain]
  :levels [[domain source graph clojure-language typescript-language
-           rust-language python-language]
+           rust-language python-language java-language]
           [engine]
           [application]
           [adapters]
@@ -449,7 +449,7 @@ inspector says the session is not attached.
 Generating the IR asks `uml-viewer.graph` to scan a source tree. `:lang`
 selects the scanner (default `:clojure`). `:sources` scans each root and
 merges them. Register another implementation with
-`(graph/register! :java my-java-scanner)`. The scanner must satisfy
+`(graph/register! :go my-go-scanner)`. The scanner must satisfy
 `LanguageGraph`:
 
 | method | role |
@@ -515,14 +515,38 @@ project name. `list[Animal]` is not. Public module-level functions and
 classes are `:ops`. A module whose public classes are only `Protocol` or
 `ABC` bases, with no public functions, is `:stereotype :interface`.
 
+**Java** (`uml-viewer.java-language.graph-java`) emits one class per
+`.java` file. The `package` declaration names it, so
+`src/main/java/com/acme/model/Dog.java` in `package com.acme.model` is
+`com.acme.model.Dog` (`:model.Dog` under the prefix `com.acme`). Point
+`:src` at `src/main/java` or at the project root. A `:sources` entry
+needs no `:prefix`; the package already names each class. Nested types
+belong to their file. It skips `*Test.java`, `*Tests.java`, `*IT.java`,
+`package-info.java`, `module-info.java`, the test roots beside
+`src/main` (`src/test`, `src/integrationTest`, `src/testFixtures`), and
+paths under `target` and `build`. `extends` is `:inheritance`, for a
+class or an interface. `implements` is `:implements`. An import of a
+project type is a dependency, and so is a static import of its member.
+Java needs no import inside a package, so a mention of a type from the
+same package, or from a `.*` import, is a dependency too. A fully
+qualified `com.acme.model.Animal` is a dependency. A single-type import
+shadows the package, as in Java: `import java.util.List` keeps a
+project class named `List` out. An import that names no project type is
+foreign (`java.util.List` stays `java.util.List`, and a listed
+`:foreign` prefix such as `java.util` collapses it). Public methods of
+the type named after the file are `:ops`. Interface and annotation
+methods are public unless `private`. Constructors are not ops. An
+interface or annotation is `:stereotype :interface`, an enum
+`:enumeration`, and an abstract class `:abstract`.
+
 `merge-scans` links a TypeScript `invoke("read_text")` to the Rust class
 that owns `#[tauri::command] fn read_text`, as a `:dependency`. Two
 project classes with the same id are an error. When a dependency and an
 `:implements` edge join the same pair, the IR keeps `:implements`.
 
-CRAP and mutation for TypeScript, Rust, and Python come from separate
-tools. The overlay joins a snapshot to the class whose `:ns` equals that
-namespace. Otherwise the class id owns that name (`bookwriter.model`
+CRAP and mutation for TypeScript, Rust, Python, and Java come from
+separate tools. The overlay joins a snapshot to the class whose `:ns`
+equals that namespace. Otherwise the class id owns that name (`bookwriter.model`
 owns `model`), a dotted child rolls up (`pdf` owns `pdf.Layout`), and
 the policy prefix belongs to the single undotted Rust class. `::` is
 read as `.`. A source file drawn inside its directory keeps its own
@@ -636,7 +660,7 @@ file at the top (`:line` omitted).
 ```
 
 `:lang` selects the extractor (default `:clojure`). Register another
-implementation with `(source/register! :java my-java-extractor)`. The
+implementation with `(source/register! :go my-go-extractor)`. The
 extractor must satisfy `LanguageSource`:
 
 | method | role |
@@ -651,12 +675,14 @@ extractor must satisfy `LanguageSource`:
 `:file`.
 
 **TypeScript** (`uml-viewer.typescript-language.source-typescript`),
-**Rust** (`uml-viewer.rust-language.source-rust`), and **Python**
-(`uml-viewer.python-language.source-python`) open `:file` and find the
-exported declaration, the `fn`, or the `def`. The class card passes
-`:lang` and `:file` from the class. A class with no `:lang` still uses
-the Clojure extractor that Main passes in. The protocol is the seam; do
-not special-case languages in the class card.
+**Rust** (`uml-viewer.rust-language.source-rust`), **Python**
+(`uml-viewer.python-language.source-python`), and **Java**
+(`uml-viewer.java-language.source-java`) open `:file` and find the
+exported declaration, the `fn`, the `def`, or the method declaration (not
+a call to it). The class card passes `:lang` and `:file` from the class.
+A class with no `:lang` still uses the Clojure extractor that Main
+passes in. The protocol is the seam; do not special-case languages in
+the class card.
 
 Quil stays in `adapters.draw` and `adapters.sketch`. The rest of the engine
 does not depend on Processing.
